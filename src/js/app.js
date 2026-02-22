@@ -351,163 +351,132 @@ function initContactAnimations() {
 ===================================================== */
 
 function initWebGL() {
-	const container = document.getElementById('three-container');
-	if (!container || typeof THREE === 'undefined') return;
+
+	const container = document.getElementById("three-container");
+	if (!container) return;
 
 	const scene = new THREE.Scene();
-	const camera = new THREE.PerspectiveCamera(75, container.offsetWidth / container.offsetHeight, 0.1, 1000);
-	const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+
+	const camera = new THREE.PerspectiveCamera(
+		45,
+		container.offsetWidth / container.offsetHeight,
+		0.1,
+		1000
+	);
+
+	camera.position.z = 30;
+
+	const renderer = new THREE.WebGLRenderer({
+		antialias: true,
+		alpha: true
+	});
 
 	renderer.setSize(container.offsetWidth, container.offsetHeight);
-	renderer.setClearColor(0x000000, 0);
+	renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+	container.innerHTML = "";
 	container.appendChild(renderer.domElement);
 
 	const textureLoader = new THREE.TextureLoader();
-	const imageTexture = textureLoader.load('assets/images/Jenna_robot_1.jpg');
 
-	const imageWidth = 100;
-	const imageHeight = 120;
-	const particleCount = imageWidth * imageHeight;
+	const imagePath = "assets/images/Jenna_robot_1.jpg";
 
-	const geometry = new THREE.BufferGeometry();
-	const positions = new Float32Array(particleCount * 3);
-	const originalPositions = new Float32Array(particleCount * 3);
-	const targetPositions = new Float32Array(particleCount * 3);
-	const uvs = new Float32Array(particleCount * 2);
-	const sizes = new Float32Array(particleCount);
+	textureLoader.load(imagePath, (texture) => {
 
-	let index = 0;
-	for (let i = 0; i < imageWidth; i++) {
-		for (let j = 0; j < imageHeight; j++) {
-			const x = (i / imageWidth) * 14 - 7;
-			const y = (j / imageHeight) * 16 - 8;
+		const geometry = new THREE.PlaneGeometry(16, 22, 70, 90);
 
-			positions[index * 3] = x;
-			positions[index * 3 + 1] = y;
-			positions[index * 3 + 2] = 0;
+		const count = geometry.attributes.position.count;
 
-			originalPositions[index * 3] = x;
-			originalPositions[index * 3 + 1] = y;
-			originalPositions[index * 3 + 2] = 0;
+		const randoms = new Float32Array(count * 3);
+		const offsets = new Float32Array(count);
 
-			targetPositions[index * 3] = x;
-			targetPositions[index * 3 + 1] = y;
-			targetPositions[index * 3 + 2] = 0;
-
-			uvs[index * 2] = i / imageWidth;
-			uvs[index * 2 + 1] = j / imageHeight;
-
-			sizes[index] = Math.random() * 0.4 + 0.2;
-			index++;
-		}
-	}
-
-	geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-	geometry.setAttribute('uv', new THREE.BufferAttribute(uvs, 2));
-	geometry.setAttribute('size', new THREE.BufferAttribute(sizes, 1));
-
-	const material = new THREE.ShaderMaterial({
-		uniforms: { uTexture: { value: imageTexture } },
-		vertexShader: `
-			uniform sampler2D uTexture;
-			attribute float size;
-			varying vec4 vColor;
-			void main() {
-				vColor = texture2D(uTexture, uv);
-				vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
-				gl_Position = projectionMatrix * mvPosition;
-				gl_PointSize = size * (400.0 / -mvPosition.z);
-			}
-		`,
-		fragmentShader: `
-			varying vec4 vColor;
-			void main() {
-				vec2 center = gl_PointCoord - vec2(0.5);
-				if (length(center) > 0.5) discard;
-				float alpha = 1.0 - smoothstep(0.2, 0.5, length(center));
-				vec3 brightColor = pow(vColor.rgb * 1.8, vec3(0.9));
-				gl_FragColor = vec4(brightColor, alpha * 0.95);
-			}
-		`,
-		transparent: true
-	});
-
-	const particleSystem = new THREE.Points(geometry, material);
-	scene.add(particleSystem);
-	camera.position.z = 20;
-
-	let isDragging = false;
-	let mouseX = 0, mouseY = 0, animationProgress = 0;
-
-	container.addEventListener('mousedown', (e) => {
-		isDragging = true;
-		container.style.cursor = 'grabbing';
-		updateMouse(e);
-	});
-
-	container.addEventListener('mousemove', (e) => {
-		updateMouse(e);
-		if (!isDragging) return;
-		animationProgress = Math.min(animationProgress + 0.015, 1.0);
-
-		for (let i = 0; i < particleCount; i++) {
-			const screenX = (originalPositions[i * 3] + 7) / 14;
-			const screenY = (originalPositions[i * 3 + 1] + 8) / 16;
-			const dist = Math.sqrt((screenX - mouseX) ** 2 + (screenY - mouseY) ** 2);
-			const maxDist = 0.4;
-			if (dist < maxDist) {
-				const force = (maxDist - dist) / maxDist;
-				const angle = Math.atan2(screenY - mouseY, screenX - mouseX);
-				targetPositions[i * 3] = originalPositions[i * 3] + Math.cos(angle) * force * 12 * animationProgress;
-				targetPositions[i * 3 + 1] = originalPositions[i * 3 + 1] + Math.sin(angle) * force * 12 * animationProgress;
-				targetPositions[i * 3 + 2] = originalPositions[i * 3 + 2] + force * 6 * animationProgress;
-			}
-		}
-	});
-
-	container.addEventListener('mouseup', () => {
-		isDragging = false;
-		container.style.cursor = 'grab';
-	});
-
-	container.style.cursor = 'grab';
-
-	function updateMouse(e) {
-		const rect = container.getBoundingClientRect();
-		mouseX = (e.clientX - rect.left) / rect.width;
-		mouseY = 1.0 - (e.clientY - rect.top) / rect.height;
-	}
-
-	function animate() {
-		requestAnimationFrame(animate);
-		const posAttr = geometry.attributes.position;
-
-		for (let i = 0; i < particleCount; i++) {
-			if (!isDragging) {
-				targetPositions[i * 3] = originalPositions[i * 3];
-				targetPositions[i * 3 + 1] = originalPositions[i * 3 + 1];
-				targetPositions[i * 3 + 2] = originalPositions[i * 3 + 2];
-				animationProgress = Math.max(animationProgress - 0.02, 0);
-			}
-			positions[i * 3] += (targetPositions[i * 3] - positions[i * 3]) * 0.1;
-			positions[i * 3 + 1] += (targetPositions[i * 3 + 1] - positions[i * 3 + 1]) * 0.1;
-			positions[i * 3 + 2] += (targetPositions[i * 3 + 2] - positions[i * 3 + 2]) * 0.1;
+		for (let i = 0; i < count; i++) {
+			randoms[i * 3] = (Math.random() - 0.5) * 1.2;
+			randoms[i * 3 + 1] = (Math.random() - 0.5) * 1.2;
+			randoms[i * 3 + 2] = Math.random() * 1.0;
+			offsets[i] = Math.random();
 		}
 
-		posAttr.needsUpdate = true;
-		renderer.render(scene, camera);
-	}
+		geometry.setAttribute("aRandom", new THREE.BufferAttribute(randoms, 3));
+		geometry.setAttribute("aOffset", new THREE.BufferAttribute(offsets, 1));
 
-	animate();
+		const material = new THREE.ShaderMaterial({
+			uniforms: {
+				uTexture: { value: texture },
+				uMouse: { value: new THREE.Vector2(0.5, 0.5) },
+				uHover: { value: 0 },
+				uTime: { value: 0 }
+			},
+			vertexShader: `
+				uniform vec2 uMouse;
+				uniform float uHover;
+				uniform float uTime;
 
-	window.addEventListener('resize', () => {
-		if (!container.offsetWidth || !container.offsetHeight) return;
+				attribute vec3 aRandom;
+				attribute float aOffset;
+
+				varying vec2 vUv;
+
+				void main() {
+					vUv = uv;
+
+					vec3 pos = position;
+
+					float dist = distance(uv, uMouse);
+					float influence = smoothstep(0.25, 0.0, dist) * uHover;
+
+					vec3 explode = aRandom * influence * 0.8;
+					float floatMotion = sin(uTime * 0.6 + aOffset * 4.0) * 0.03;
+
+					pos += explode;
+					pos.z += floatMotion * uHover;
+
+					gl_Position = projectionMatrix * modelViewMatrix * vec4(pos, 1.0);
+				}
+			`,
+			fragmentShader: `
+				uniform sampler2D uTexture;
+				varying vec2 vUv;
+
+				void main() {
+					gl_FragColor = texture2D(uTexture, vUv);
+				}
+			`,
+			transparent: true
+		});
+
+		const mesh = new THREE.Mesh(geometry, material);
+		scene.add(mesh);
+
+		let hover = 0;
+
+		container.addEventListener("mousemove", (e) => {
+			const rect = container.getBoundingClientRect();
+			const x = (e.clientX - rect.left) / rect.width;
+			const y = 1.0 - (e.clientY - rect.top) / rect.height;
+			material.uniforms.uMouse.value.set(x, y);
+			hover = 1;
+		});
+
+		container.addEventListener("mouseleave", () => {
+			hover = 0;
+		});
+
+		function animate() {
+			requestAnimationFrame(animate);
+			material.uniforms.uTime.value += 0.02;
+			material.uniforms.uHover.value += (hover - material.uniforms.uHover.value) * 0.06;
+			renderer.render(scene, camera);
+		}
+
+		animate();
+	});
+
+	window.addEventListener("resize", () => {
 		camera.aspect = container.offsetWidth / container.offsetHeight;
 		camera.updateProjectionMatrix();
 		renderer.setSize(container.offsetWidth, container.offsetHeight);
 	});
 }
-
 /* =====================================================
 	 ERROR HANDLING
 ===================================================== */
