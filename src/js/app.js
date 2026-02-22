@@ -434,13 +434,35 @@ function initWebGL() {
 				}
 			`,
 			fragmentShader: `
-				uniform sampler2D uTexture;
-				varying vec2 vUv;
+	uniform sampler2D uTexture;
+			uniform vec2 uMouse;
+			uniform float uHover;
+			varying vec2 vUv;
 
-				void main() {
-					gl_FragColor = texture2D(uTexture, vUv);
-				}
-			`,
+			void main() {
+
+				vec2 uv = vUv;
+
+				// Distance to mouse for localized effect
+				float dist = distance(uv, uMouse);
+				float influence = smoothstep(0.35, 0.0, dist) * uHover;
+
+				// Subtle chromatic separation
+				vec2 chromaOffset = (uv - 0.5) * 0.003 * influence;
+
+				vec4 r = texture2D(uTexture, uv + chromaOffset);
+				vec4 g = texture2D(uTexture, uv);
+				vec4 b = texture2D(uTexture, uv - chromaOffset);
+
+				vec3 color = vec3(r.r, g.g, b.b);
+
+				// Soft glass highlight sweep
+				float light = smoothstep(0.2, 0.8, uv.y + sin(uv.x * 6.0) * 0.03);
+				color += light * influence * 0.08;
+
+		gl_FragColor = vec4(color, 1.0);
+			}
+`,
 			transparent: true
 		});
 
