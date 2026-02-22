@@ -1,21 +1,13 @@
-// ============================================================
-// S3 Premium Micro-Shards Portrait Engine
-// ============================================================
-
 export const PortraitWebGL = (() => {
 
 	let container, scene, camera, renderer;
 	let mesh, material, geometry, portraitTexture;
-	let uniforms = {};
-
-	const WIDTH_SEGMENTS = 180;
-	const HEIGHT_SEGMENTS = 220;
 
 	let DeviceRef;
 
-	// ----------------------------------------
+	// --------------------------------------------------
 	// PUBLIC INIT
-	// ----------------------------------------
+	// --------------------------------------------------
 	async function init(device) {
 
 		DeviceRef = device;
@@ -23,26 +15,21 @@ export const PortraitWebGL = (() => {
 		container = document.getElementById("portrait-container");
 		if (!container) return;
 
-		// If device not eligible → fallback
 		if (!DeviceRef.canUseWebGLPortrait) {
 			loadFallback();
 			return;
 		}
 
 		initScene();
-
 		portraitTexture = await loadTexture();
-		const vertexShader = await loadShader("./src/webgl/shaders/portrait-vertex.glsl");
-		const fragmentShader = await loadShader("./src/webgl/shaders/portrait-fragment.glsl");
-
-		buildMesh(vertexShader, fragmentShader);
+		buildMesh();
 		addEvents();
 		animate();
 	}
 
-	// ----------------------------------------
+	// --------------------------------------------------
 	// FALLBACK
-	// ----------------------------------------
+	// --------------------------------------------------
 	function loadFallback() {
 		const img = document.createElement("img");
 		img.src = DeviceRef.isMobile
@@ -51,17 +38,14 @@ export const PortraitWebGL = (() => {
 
 		img.className = "portrait-static";
 		container.appendChild(img);
-
-		gsap.from(img, { opacity: 0, duration: 1.2 });
 	}
 
-	// ----------------------------------------
+	// --------------------------------------------------
 	// LOAD TEXTURE
-	// ----------------------------------------
+	// --------------------------------------------------
 	function loadTexture() {
 		return new Promise(resolve => {
 			const loader = new THREE.TextureLoader();
-
 			const src = DeviceRef.isMobile
 				? "assets/images/Jenna_robot_1_mobile.jpg"
 				: "assets/images/Jenna_robot_1.jpg";
@@ -70,124 +54,170 @@ export const PortraitWebGL = (() => {
 		});
 	}
 
-	// ----------------------------------------
-	// LOAD SHADER
-	// ----------------------------------------
-	async function loadShader(path) {
-		const res = await fetch(path);
-		return await res.text();
-	}
-
-	// ----------------------------------------
+	// --------------------------------------------------
 	// INIT SCENE
-	// ----------------------------------------
+	// --------------------------------------------------
 	function initScene() {
+
 		scene = new THREE.Scene();
 
 		camera = new THREE.PerspectiveCamera(
-			38,
+			45,
 			container.clientWidth / container.clientHeight,
 			0.1,
-			200
+			1000
 		);
 
-		camera.position.z = 28;
+		camera.position.z = 30;
 
-		renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+		renderer = new THREE.WebGLRenderer({
+			antialias: true,
+			alpha: true
+		});
+
 		renderer.setSize(container.clientWidth, container.clientHeight);
-		renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.7));
+		renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 
 		container.appendChild(renderer.domElement);
+
+		window.addEventListener("resize", () => {
+			camera.aspect = container.clientWidth / container.clientHeight;
+			camera.updateProjectionMatrix();
+			renderer.setSize(container.clientWidth, container.clientHeight);
+		});
 	}
 
-	// ----------------------------------------
-	// BUILD MESH
-	// ----------------------------------------
-	function buildMesh(vs, fs) {
+	// --------------------------------------------------
+	// BUILD MESH (RESTORED WORKING VERSION)
+	// --------------------------------------------------
+	function buildMesh() {
 
-		geometry = new THREE.PlaneGeometry(
-			16, 22, WIDTH_SEGMENTS, HEIGHT_SEGMENTS
-		);
+		geometry = new THREE.PlaneGeometry(16, 22, 60, 80);
 
-		addShardAttributes();
+		const count = geometry.attributes.position.count;
 
-		uniforms = {
-			uTexture: { value: portraitTexture },
-			uTime: { value: 0 },
-			uMouse: { value: new THREE.Vector2(0.5, 0.5) },
-			uHover: { value: 0 },
-			uShimmerIntensity: { value: 0.8 },
-			uRefractionStrength: { value: 0.015 }
-		};
+		const randoms = new Float32Array(count * 3);
+		const offsets = new Float32Array(count);
+
+		for (let i = 0; i < count; i++) {
+
+			randoms[i * 3] = (Math.random() - 0.5) * 1.5;
+			randoms[i * 3 + 1] = (Math.random() - 0.5) * 1.5;
+			randoms[i * 3 + 2] = Math.random() * 1.2;
+
+			offsets[i] = Math.random();
+		}
+
+		geometry.setAttribute("aRandom", new THREE.BufferAttribute(randoms, 3));
+		geometry.setAttribute("aOffset", new THREE.BufferAttribute(offsets, 1));
 
 		material = new THREE.ShaderMaterial({
-			uniforms,
-			vertexShader: vs,
-			fragmentShader: fs,
-			transparent: true,
-			side: THREE.DoubleSide
+			uniforms: {
+				uTexture: { value: portraitTexture },
+				uMouse: { value: new THREE.Vector2(0.5, 0.5) },
+				uHover: { value: 0 },
+				uTime: { value: 0 }
+			},
+			vertexShader: `
+				uniform vec2 uMouse;
+				uniform float uHover;
+				uniform float uTime;
+
+				attribute vec3 aRandom;
+				attribute float aOffset;
+
+				varying vec2 vUv;
+				varying float vDist;
+
+				void main() {
+
+					vUv = uv;
+
+					vec3 pos = position;
+
+					float dist = distance(uv, uMouse);
+					vDist = dist;
+
+					float influence = smoothstep(0.22, 0.0, dist);
+
+					vec3 lift = aRandom * influence * uHover * 0.25;
+
+					float floatZ = sin(uTime * 0.6 + aOffset * 4.0) * 0.02;
+
+					pos += lift;
+					pos.z += floatZ * uHover;
+
+					gl_Position = projectionMatrix * modelViewMatrix * vec4(pos, 1.0);
+				}
+			`,
+			fragmentShader: `
+				uniform sampler2D uTexture;
+				uniform float uHover;
+				uniform float uTime;
+
+				varying vec2 vUv;
+				varying float vDist;
+
+				void main() {
+
+					vec2 uv = vUv;
+
+					float influence = smoothstep(0.4, 0.0, vDist) * uHover;
+
+					vec2 refractOffset = (uv - 0.5) * 0.003 * influence;
+
+					vec4 base = texture2D(uTexture, uv + refractOffset);
+
+					vec4 r = texture2D(uTexture, uv + refractOffset * 1.4);
+					vec4 g = texture2D(uTexture, uv);
+					vec4 b = texture2D(uTexture, uv - refractOffset * 1.4);
+
+					vec3 glassColor = vec3(r.r, g.g, b.b);
+
+					vec3 color = mix(base.rgb, glassColor, influence * 0.25);
+
+					float sweep = smoothstep(0.2, 0.8, vUv.y + sin(uTime * 0.4) * 0.1);
+					color += sweep * influence * 0.06;
+
+					gl_FragColor = vec4(color, 1.0);
+				}
+			`,
+			transparent: true
 		});
 
 		mesh = new THREE.Mesh(geometry, material);
 		scene.add(mesh);
-
-		gsap.from(mesh.scale, {
-			x: 0.75,
-			y: 0.75,
-			duration: 1.2,
-			ease: "power3.out"
-		});
 	}
 
-	// ----------------------------------------
-	// SHARD ATTRIBUTES
-	// ----------------------------------------
-	function addShardAttributes() {
-		const count = geometry.attributes.position.count;
-
-		const aRandom = new Float32Array(count);
-		const aCluster = new Float32Array(count * 3);
-
-		for (let i = 0; i < count; i++) {
-			aRandom[i] = Math.random();
-
-			aCluster[i * 3] = (Math.random() - 0.5) * 0.8;
-			aCluster[i * 3 + 1] = (Math.random() - 0.5) * 0.8;
-			aCluster[i * 3 + 2] = (Math.random() - 0.5) * 1.2;
-		}
-
-		geometry.setAttribute("aRandom", new THREE.BufferAttribute(aRandom, 1));
-		geometry.setAttribute("aCluster", new THREE.BufferAttribute(aCluster, 3));
-	}
-
-	// ----------------------------------------
+	// --------------------------------------------------
 	// EVENTS
-	// ----------------------------------------
+	// --------------------------------------------------
 	function addEvents() {
-		container.addEventListener("mousemove", e => {
-			const rect = container.getBoundingClientRect();
-			const x = (e.clientX - rect.left) / rect.width;
-			const y = 1 - (e.clientY - rect.top) / rect.height;
 
-			uniforms.uMouse.value.set(x, y);
-			gsap.to(uniforms.uHover, { value: 1, duration: 0.4 });
+		container.addEventListener("mousemove", (e) => {
+
+			const rect = container.getBoundingClientRect();
+
+			const x = (e.clientX - rect.left) / rect.width;
+			const y = 1.0 - (e.clientY - rect.top) / rect.height;
+
+			material.uniforms.uMouse.value.set(x, y);
+			material.uniforms.uHover.value = 1;
 		});
 
 		container.addEventListener("mouseleave", () => {
-			gsap.to(uniforms.uHover, { value: 0, duration: 0.6 });
+			material.uniforms.uHover.value = 0;
 		});
 	}
 
-	// ----------------------------------------
+	// --------------------------------------------------
 	// ANIMATE
-	// ----------------------------------------
+	// --------------------------------------------------
 	function animate() {
+
 		requestAnimationFrame(animate);
 
-		uniforms.uTime.value += 0.01;
-
-		mesh.rotation.y = (uniforms.uMouse.value.x - 0.5) * 0.35;
-		mesh.rotation.x = (uniforms.uMouse.value.y - 0.5) * -0.25;
+		material.uniforms.uTime.value += 0.01;
 
 		renderer.render(scene, camera);
 	}
